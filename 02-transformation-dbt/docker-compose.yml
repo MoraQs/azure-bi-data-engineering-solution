@@ -1,0 +1,16 @@
+services:
+  dbt-runner:
+    build: .
+    volumes:
+      - .:/usr/app
+    # Load variables from the .env file
+    env_file:
+      - ./.env  
+    # Explicitly list the environment variables to be passed to the container
+    environment:
+      - DBT_PROFILES_DIR=/usr/app/adventureworks
+      - DATABRICKS_HOST=${DATABRICKS_HOST}
+      - DATABRICKS_HTTP_PATH=${DATABRICKS_HTTP_PATH}
+      - DATABRICKS_TOKEN=${DATABRICKS_TOKEN}
+    working_dir: /usr/app/adventureworks
+    command: ["/bin/bash"]
