@@ -1,0 +1,24 @@
+{
+	"name": "AzureSql_DEV_LOAD_DS",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "AzureSqlDB_DEV_LS",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"TableName": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "SalesLT",
+			"table": {
+				"value": "@dataset().TableName",
+				"type": "Expression"
+			}
+		}
+	}
+}

@@ -1,0 +1,313 @@
+{
+	"name": "IngestDatatoADLS",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup database tables",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT \n    t.TABLE_NAME AS tableName,\n    t.TABLE_SCHEMA AS schemaName,\n    COALESCE(m.is_incremental, 0) AS isIncremental,\n    COALESCE(m.watermark_column, '') AS watermarkColumn,\n    COALESCE(m.last_loaded_date, '2000-01-01') AS lastDatetime,\n    m.watermark_type AS watermarkType \nFROM INFORMATION_SCHEMA.TABLES t\nLEFT JOIN SalesLT.ETL_Table_Metadata m\n    ON t.TABLE_NAME = m.table_name\nWHERE t.TABLE_SCHEMA = 'SalesLT' AND t.TABLE_NAME NOT IN ('ETL_Table_Metadata')",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DynamicFabricDEVBUILD_DS",
+						"type": "DatasetReference",
+						"parameters": {
+							"serverName": {
+								"value": "@pipeline().parameters.serverName",
+								"type": "Expression"
+							},
+							"databaseName": {
+								"value": "@pipeline().parameters.databaseName",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Iterate through the loaded tables",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup database tables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup database tables').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Copy data records for each table",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "Get last watermark",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								},
+								{
+									"activity": "Get new watermark",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@{if(\n  and(\n    equals(item().isIncremental, 1), \n    not(empty(activity('Get last watermark').output.firstRow.last_loaded_date))\n  ),\n  concat(\n    'SELECT * FROM ', item().schemaName, '.', item().tableName,\n    ' WHERE ', item().watermarkColumn, ' > ''', activity('Get last watermark').output.firstRow.last_loaded_date, ''''\n  ),\n  concat('SELECT * FROM ', item().schemaName, '.', item().tableName)\n)}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DynamicFabricDEVBUILD_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"serverName": {
+											"value": "@pipeline().parameters.serverName",
+											"type": "Expression"
+										},
+										"databaseName": {
+											"value": "@pipeline().parameters.databaseName",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "FabricBD_ADLSgen2_Sink_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"serverName": {
+											"value": "@pipeline().parameters.serverName",
+											"type": "Expression"
+										},
+										"databaseName": {
+											"value": "@pipeline().parameters.databaseName",
+											"type": "Expression"
+										},
+										"tableName": {
+											"value": "@item().tableName",
+											"type": "Expression"
+										},
+										"schemaName": {
+											"value": "@item().schemaName",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Get last watermark",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "SELECT\n\tlast_loaded_date,\n\twatermark_column\nFROM SalesLT.ETL_Table_Metadata\nWHERE table_name = '@{item().tableName}'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DynamicFabricDEVBUILD_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"serverName": {
+											"value": "@pipeline().parameters.serverName",
+											"type": "Expression"
+										},
+										"databaseName": {
+											"value": "@pipeline().parameters.databaseName",
+											"type": "Expression"
+										}
+									}
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "Get new watermark",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@if(\n  and( \n    equals(item().isIncremental, 1),\n    not(empty(item().watermarkColumn))\n  ),\n  concat('SELECT MAX(', item().watermarkColumn, ') AS new_watermark FROM ', item().schemaName, '.', item().tableName),\n  'SELECT NULL AS new_watermark'\n)",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DynamicFabricDEVBUILD_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"serverName": {
+											"value": "@pipeline().parameters.serverName",
+											"type": "Expression"
+										},
+										"databaseName": {
+											"value": "@pipeline().parameters.databaseName",
+											"type": "Expression"
+										}
+									}
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "Update watermark",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Copy data records for each table",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[SalesLT].[usp_UpdateWatermark]",
+								"storedProcedureParameters": {
+									"tableName": {
+										"value": {
+											"value": "@item().tableName",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"newWatermark": {
+										"value": {
+											"value": "@activity('Get new watermark').output.firstRow.new_watermark",
+											"type": "Expression"
+										},
+										"type": "Datetime"
+									},
+									"watermarkType": {
+										"value": {
+											"value": "@item().watermarkType",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "Fabric_DEVBUILD_LS",
+								"type": "LinkedServiceReference",
+								"parameters": {
+									"serverName": {
+										"value": "@pipeline().parameters.serverName",
+										"type": "Expression"
+									},
+									"databaseName": {
+										"value": "@pipeline().parameters.databaseName",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"serverName": {
+				"type": "string",
+				"defaultValue": "ttcxzh37dhhetma2y22gr4ayd4-wcfe5at2n6tejb2wbsnro73gti.database.fabric.microsoft.com,1433"
+			},
+			"databaseName": {
+				"type": "string",
+				"defaultValue": "AdventureWorks-47520d97-bb33-4a08-bab9-772de1677f91"
+			}
+		},
+		"variables": {
+			"debugQuery": {
+				"type": "String"
+			}
+		},
+		"annotations": []
+	}
+}

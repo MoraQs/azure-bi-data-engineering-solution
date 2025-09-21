@@ -1,0 +1,41 @@
+{
+	"name": "FabricBD_ADLSgen2_Sink_DS",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ADLSgen2_LS",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"serverName": {
+				"type": "string"
+			},
+			"databaseName": {
+				"type": "string"
+			},
+			"tableName": {
+				"type": "string"
+			},
+			"schemaName": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@concat(dataset().schemaName, '_',dataset().tableName, '_', formatDateTime(utcNow(), 'yyyyMMddHHmmss'), '.parquet')",
+					"type": "Expression"
+				},
+				"folderPath": {
+					"value": "@concat(\n  dataset().serverName, '/',\n  dataset().databaseName, '/',\n  dataset().tableName, '/Year=',\n  formatDateTime(utcNow(), 'yyyy'), '/Month=',\n  formatDateTime(utcNow(), 'MM'), '/Day='\n)",
+					"type": "Expression"
+				},
+				"fileSystem": "staging"
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": []
+	}
+}

@@ -1,0 +1,9 @@
+{
+	"name": "onep-dev-adf",
+	"location": "southafricanorth",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "28934c2f-4160-4073-8bb0-cc933797a139",
+		"tenantId": "9f7cc59c-197f-49ce-b01a-c6b468f0181f"
+	}
+}

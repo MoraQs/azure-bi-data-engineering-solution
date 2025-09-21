@@ -1,0 +1,66 @@
+name: ADF-AzureDevOps-CICD-pipeline-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  name: Default
+
+stages:
+
+- stage: BUILD
+  jobs:
+  - template: adf-build-job.yml
+    parameters:
+      subscriptionId: 2b84c6b0-3b9c-4d78-9d9e-2662dddaf42c
+      resourceGroupName: onep_dev_rg
+      dataFactoryName: onep-dev-adf
+      repoRootFolder: /data-factory/
+      packageJsonFolder: /devops/
+
+
+- stage: DEV
+  displayName: 'Deploy to DEV'
+  dependsOn: BUILD
+  condition: succeeded()
+  variables:
+  - group: 'DEV VARIABLE GROUP'
+  jobs:
+  - template: adf-deploy-job.yml
+    parameters:
+      environmentName: DEV
+      subscriptionId: 2b84c6b0-3b9c-4d78-9d9e-2662dddaf42c
+      resourceGroupName: onep_dev_rg
+      dataFactoryName: onep-dev-adf
+      serviceConnectionName: cicd_dev
+      overrideParameters: >
+        -ADLSgen2_LS_properties_typeProperties_url $(ADLSgen2_LS_properties_typeProperties_url)
+        -AzureSqlDB_DEV_LS_properties_typeProperties_server $(AzureSqlDB_DEV_LS_properties_typeProperties_server)
+        -AzureSqlDB_DEV_LS_properties_typeProperties_database $(AzureSqlDB_DEV_LS_properties_typeProperties_database)
+
+
+- stage: PROD
+  displayName: 'Deploy to PROD'
+  dependsOn: DEV
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+  - group: 'PROD VARIABLE GROUP'
+  jobs:
+  - template: adf-deploy-job.yml
+    parameters:
+      environmentName: PROD
+      subscriptionId: 2b84c6b0-3b9c-4d78-9d9e-2662dddaf42c
+      resourceGroupName: onep_prod_rg
+      dataFactoryName: onep-prod-adf
+      serviceConnectionName: cicd_prod
+      overrideParameters: >
+        -ADLSgen2_LS_properties_typeProperties_url $(ADLSgen2_LS_properties_typeProperties_url)
+        -AzureSqlDB_DEV_LS_properties_typeProperties_server $(AzureSqlDB_DEV_LS_properties_typeProperties_server)
+        -AzureSqlDB_DEV_LS_properties_typeProperties_database $(AzureSqlDB_DEV_LS_properties_typeProperties_database)

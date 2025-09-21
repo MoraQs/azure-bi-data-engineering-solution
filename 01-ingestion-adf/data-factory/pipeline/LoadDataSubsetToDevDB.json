@@ -1,0 +1,144 @@
+{
+	"name": "LoadDataSubsetToDevDB",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get the list of tables to be loaded to DEV db",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT \n    TABLE_SCHEMA as schemaName, \n    TABLE_NAME as tableName\nFROM information_schema.tables\nWHERE \n    table_schema = 'SalesLT' \n    AND table_type = 'BASE TABLE'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DynamicFabricSQLDB_PROD_DS",
+						"type": "DatasetReference",
+						"parameters": {
+							"serverName": {
+								"value": "@pipeline().parameters.serverName",
+								"type": "Expression"
+							},
+							"databaseName": {
+								"value": "@pipeline().parameters.databaseName",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Iterate through the ingested data",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get the list of tables to be loaded to DEV db",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get the list of tables to be loaded to DEV db').output.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "copy data to dev database",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@if(\n  equals(item().tableName, 'Customer'),\n  'SELECT TOP 10 CustomerID, NameStyle, Title, ''FirstName'' as FirstName, ''MiddleName'' as MiddleName, ''LastName'' as LastName, Suffix, ''CompanyName'' as CompanyName, ''SalesPerson'' as SalesPerson, ''EmailAddress'' as EmailAddress, ''000-0000-0000'' as Phone, HASHBYTES(''SHA_256'', PasswordHash) as PasswordHash, PasswordSalt, rowguid, ModifiedDate FROM SalesLT.Customer',\n  if(\n    equals(item().tableName, 'SalesOrderHeader'),\n    'SELECT TOP 10 SalesOrderID, RevisionNumber, OrderDate, DueDate, ShipDate, Status, OnlineOrderFlag, ''PurchaseOrderNo'' as PurchaseOrderNumber, ''00055444'' as AccountNumber, CustomerID, ShipToAddressID, BillToAddressID, ShipMethod, ''0'' as CreditCardApprovalCode, ''200'' as SubTotal, ''10'' as TaxAmt, ''150'' as Freight, Comment, rowguid, ModifiedDate FROM SalesLT.SalesOrderHeader',\n    concat('SELECT TOP 10 * FROM ', item().schemaName, '.', item().tableName)\n  )\n)\n",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": false,
+									"tableOption": "autoCreate",
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DynamicFabricSQLDB_PROD_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"serverName": {
+											"value": "@pipeline().parameters.serverName",
+											"type": "Expression"
+										},
+										"databaseName": {
+											"value": "@pipeline().parameters.databaseName",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "AzureSql_DEV_LOAD_DS",
+									"type": "DatasetReference",
+									"parameters": {
+										"TableName": {
+											"value": "@item().tableName",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"serverName": {
+				"type": "string",
+				"defaultValue": "ttcxzh37dhhetma2y22gr4ayd4-zanjvyddznwe7iowutkhqxzei4.database.fabric.microsoft.com,1433"
+			},
+			"databaseName": {
+				"type": "string",
+				"defaultValue": "AdventureWorks-c41950a8-fdcf-4fad-b2f1-cac728f42105"
+			}
+		},
+		"annotations": []
+	}
+}
